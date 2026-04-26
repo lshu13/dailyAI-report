@@ -1,0 +1,66 @@
+name: Daily AI News Report
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  fetch-and-email:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+      
+      - name: Fetch AI news
+        run: python scripts/fetch_ai_news.py
+      
+      - name: Send email with news
+        env:
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          MAILGUN_DOMAIN: ${{ secrets.MAILGUN_DOMAIN }}
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+        run: |
+          python << 'EOF'
+          import requests
+          import os
+          
+          with open('email_body.html', 'r') as f:
+              email_html = f.read()
+          
+          mailgun_domain = os.environ.get('MAILGUN_DOMAIN')
+          mailgun_api_key = os.environ.get('MAILGUN_API_KEY')
+          recipient_email = os.environ.get('RECIPIENT_EMAIL')
+          
+          if not all([mailgun_domain, mailgun_api_key, recipient_email]):
+              print("Error: Missing required secrets")
+              exit(1)
+          
+          response = requests.post(
+              f"https://api.mailgun.net/v3/{mailgun_domain}/messages",
+              auth=("api", mailgun_api_key),
+              data={
+                  "from": f"Daily AI Report <noreply@{mailgun_domain}>",
+                  "to": recipient_email,
+                  "subject": "Daily AI Development News",
+                  "html": email_html
+              }
+          )
+          
+          if response.status_code == 200:
+              print(f"✅ Email sent to {recipient_email}")
+          else:
+              print(f"❌ Failed: {response.status_code}")
+              exit(1)
+          EOF
